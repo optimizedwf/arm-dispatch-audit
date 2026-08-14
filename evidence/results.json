@@ -1,0 +1,9 @@
+{
+  "cpu": "Neoverse-N2", "arch": "aarch64", "vcpus": 4,
+  "llama_cpp": "b10434", "kleidiai": "v1.24.0",
+  "svcntb": 16, "sve_gate": "svcntb()==QK8_0(32)",
+  "sve_instructions_compiled": 13644, "neon_instructions_compiled": 33871,
+  "bench_q8": {"default": {"pp512": 187.36, "tg128": 43.44}, "kleidiai": {"pp512": 185.47, "tg128": 43.59}},
+  "bench_q4": {"default": {"pp512": 89.71, "tg128": 31.67}, "kleidiai": {"pp512": 89.65, "tg128": 31.91}},
+  "verdict": "KleidiAI SVE kernels dead code on 128-bit Neoverse; dispatch gate should be svcntb()>=32"
+}
