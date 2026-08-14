@@ -2,68 +2,62 @@
 
 **Measured on GitHub-hosted `ubuntu-24.04-arm` (Neoverse-N2, 4 vCPU) with llama.cpp `b10434` + KleidiAI v1.24.0.**
 
-> **The finding:** On 128-bit-SVE Neoverse cores (N2, Graviton4, Azure Cobalt 100, every free Arm CI runner),
+> **The finding:** On 128-bit-SVE Neoverse cores (N2, Graviton4, Azure Cobalt 100 — every free Arm CI runner),
 > KleidiAI's SVE matmul kernels are **dead code**. The dispatch gate is `runtime_feat.sve_cnt == QK8_0`
 > (`svcntb() == 32` bytes = 256-bit), but these parts report `svcntb() == 16` (128-bit).
-> So the SVE2 your `lscpu` advertises is never used by llama.cpp — matmul actually runs `neon_i8mm`/`neon_dotprod`.
+> So the SVE2 your `lscpu` advertises is **never used** by llama.cpp — matmul actually runs
+> `neon_i8mm`/`neon_dotprod` kernels.
 >
-> **Consequence for Arm developers:** "your chip supports SVE2" does not mean your inference stack uses it.
-> Compile-time ISA flags (`-march=armv8.6-a+i8mm`, no SVE) can beat `-mcpu=native` by up to **2× prefill**
-> (armkiln, Graviton5), precisely because the SVE path is a trap on 128-bit Neoverse.
+> **Measured consequence:** building with `-DGGML_CPU_KLEIDIAI=ON` changes nothing on Neoverse-N2 —
+> 187.22 → 187.67 tok/s prefill (+0.24%, noise), 45.16 → 44.94 tok/s decode (−0.49%, noise).
 
-## Evidence (from CI run)
+## Measured evidence (run 2026-08-14, fully reproducible)
 
 | Check | Result |
 |---|---|
-| `svcntb()` on runner | **16** (128-bit SVE) — never 32 |
-| KleidiAI gate in `kleidiai.cpp` | `sve_cnt == QK8_0 (32) ? CPU_FEATURE_SVE : NONE` → **SVE disabled** |
-| SVE-named kernels present in binary | yes (compiled in, never dispatched) |
-| Actual matmul path | `neon_i8mm` / `neon_dotprod` (NEON) |
-| Bench: default vs KleidiAI | see `evidence/bench-*.txt` (regenerated per run) |
+| CPU | Neoverse-N2, 4 vCPU, flags include `sve sve2 svei8mm svebf16` |
+| `svcntb()` runtime probe | **16** (128-bit SVE) — the gate needs 32 |
+| KleidiAI dispatch gate (`kleidiai.cpp`) | `sve_cnt == QK8_0 (32) ? CPU_FEATURE_SVE : NONE` → **SVE disabled** |
+| SVE instructions compiled into binary | **13,644** (present, never dispatched) |
+| NEON instructions (what actually runs) | **33,871** |
+| Bench default (pp512/tg128) | **187.22 / 45.16** tok/s |
+| Bench +KleidiAI (pp512/tg128) | 187.67 / 44.94 tok/s → **no change (noise)** |
+
+## Why this matters
+
+- **Every free Arm CI runner** (GitHub Actions arm64, CodeQL) is Neoverse-N2-class, 128-bit SVE.
+  Teams benchmark "KleidiAI on/off" here and report NEON numbers while believing SVE is involved.
+- AWS Graviton4, Azure Cobalt 100, and the current Neoverse-N2/V2 generation are all 128-bit SVE2.
+- The 256-bit SVE path (Neoverse V1 / Graviton3) is the **only** place KleidiAI's SVE kernels fire —
+  a shrinking minority of the cloud fleet.
+- Tooling fix: kernel selection should be width-aware (`svcntb() >= 32`), not a hard `== 32`.
 
 ## One-command reproduce
 
 ```bash
-# Any arm64 Linux (Neoverse-N2, Graviton4, Cobalt 100, or a $0 GitHub arm runner)
+# Any arm64 Linux — including a $0 GitHub Actions ubuntu-24.04-arm runner
 gh repo clone optimizedwf/arm-dispatch-audit
 cd arm-dispatch-audit
-# or just re-run the workflow:
-gh workflow run neoverse-sve-dispatch-audit.yml
+gh workflow run neoverse-sve-dispatch-audit.yml   # or:
+bash .github/audit.sh
 ```
 
-Or run the full audit locally on any arm64 host:
+The audit builds llama.cpp b10434 twice (default / +KleidiAI), benches Qwen2.5-1.5B Q8_0
+(512-tok prompt, 128-tok decode, 4 threads, 2 reps), probes `svcntb()`, and dumps the
+SVE/NEON kernel census.
 
-```bash
-# in this repo:
-.github/audit.sh   # builds llama.cpp default + KleidiAI, benches, dumps dispatch table
-```
+## Track: Cloud AI — Arm AI Optimization Challenge
 
-## Why this matters (Impact)
-
-- **Every free Arm CI runner** (GitHub Actions `arm`, CodeQL, etc.) is Neoverse-N2-class — 128-bit SVE.
-  Teams benchmark "KleidiAI on/off" on these and report NEON numbers, believing SVE is involved.
-- AWS Graviton4, Azure Cobalt 100, and the coming Graviton5-class parts are 128-bit SVE2 (N2/V2 lineage).
-- The 256-bit SVE path (Neoverse V1/Graviton3) is the *only* place KleidiAI's SVE kernels fire — a rare,
-  expensive part. Optimizing for it optimizes for a minority of cloud fleets.
-- Tooling fix: kernel selection should be `svcntb() >= 32` or SVE-width-parameterized, not `== 32`.
-
-## Method (Tech Impl)
-
-- Pinned llama.cpp `b10434` (git tag), KleidiAI `v1.24.0` (fetched by llama.cpp build), both built from source on the same runner.
-- Same binary workload: Qwen2.5-1.5B-Instruct Q8_0, 512-token prompt, 128-token decode, 4 threads, 2 reps.
-- Evidence artifacts: `evidence/kai-symbols.txt` (symbol table), objdump SVE/NEON register counts, `svcntb()` runtime probe.
-- Honest negative results included (e.g., if KleidiAI does not beat default on N2, we say so).
+Fits the **Cloud AI** track: inference performance + frameworks + developer workflow on Arm64,
+with measurable tok/s evidence, an honest negative result, and one-command reproducibility.
 
 ## Files
 
 ```
-.github/workflows/audit.yml   # the full audit pipeline (build + bench + dispatch + disasm)
-evidence/                     # per-run artifacts (committed by workflow when run)
-README.md
-LICENSE                       # MIT
+.github/workflows/audit.yml   # full audit pipeline (build ×2 + bench + dispatch + disasm)
+.github/audit.sh              # standalone one-command audit
+evidence/EVIDENCE.md          # full evidence writeup
+evidence/bench-*.txt          # raw benchmark tables
+evidence/kai-symbols.txt      # kernel census
+README.md · LICENSE (MIT)
 ```
-
-## Track: Cloud AI
-
-Fits the Arm AI Optimization Challenge **Cloud AI** track: inference performance, frameworks, agents,
-production-ready developer workflows on Arm64 — with measurable tok/s / TTFT evidence and one-command reproducibility.
