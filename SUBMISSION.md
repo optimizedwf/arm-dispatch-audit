@@ -13,8 +13,8 @@ runner (GitHub Actions `ubuntu-24.04-arm`), AWS Graviton4, and Azure Cobalt 100.
 binary are never dispatched** — the SVE2 advertised in `/proc/cpuinfo` is never used. Matmul
 actually runs NEON `i8mm`/`dotprod` kernels.
 
-Measured: default vs `-DGGML_CPU_KLEIDIAI=ON` on Neoverse-N2 → 187.22 vs 187.67 tok/s prefill
-(+0.24%, noise) and 45.16 vs 44.94 tok/s decode (−0.49%, noise). KleidiAI is a **no-op** on
+Measured: default vs `-DGGML_CPU_KLEIDIAI=ON` on Neoverse-N2 → 187.06 vs 186.92 tok/s prefill
+(−0.07%, noise) and 43.84 vs 42.33 tok/s decode (−3.4%, noise). KleidiAI is a **no-op** on
 128-bit Neoverse. The SVE kernels only fire on 256-bit Neoverse V1 / Graviton3 — a shrinking
 minority of cloud fleets.
 
