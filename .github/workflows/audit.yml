@@ -40,25 +40,26 @@ jobs:
           pip install -q huggingface_hub 2>/dev/null
           python3 -c "
           from huggingface_hub import hf_hub_download
-          p = hf_hub_download('Qwen/Qwen2.5-1.5B-Instruct-GGUF', 'Qwen2.5-1.5B-Instruct-Q8_0.gguf', local_dir='models')
+          p = hf_hub_download('Qwen/Qwen2.5-1.5B-Instruct-GGUF', 'qwen2.5-1.5b-instruct-q8_0.gguf', local_dir='models')
           print('downloaded', p)
           " 2>&1 | tail -2
           ls -la models/ 2>/dev/null || echo "NO MODEL"
-          if [ -f models/Qwen2.5-1.5B-Instruct-Q8_0.gguf ]; then
+          if [ -f models/qwen2.5-1.5b-instruct-q8_0.gguf ]; then
             echo "=== DEFAULT ==="
-            ./llama.cpp/llama-bench -m models/Qwen2.5-1.5B-Instruct-Q8_0.gguf -p 512 -n 128 -t 4 -r 2 | tee bench-default.txt
+            ./llama.cpp/llama-bench -m models/qwen2.5-1.5b-instruct-q8_0.gguf -p 512 -n 128 -t 4 -r 2 | tee bench-default.txt
             echo "=== KLEIDIAI ==="
-            ./llama.cpp/build-kleidiai/bin/llama-bench -m models/Qwen2.5-1.5B-Instruct-Q8_0.gguf -p 512 -n 128 -t 4 -r 2 | tee bench-kleidiai.txt
+            ./llama.cpp/build-kleidiai/bin/llama-bench -m models/qwen2.5-1.5b-instruct-q8_0.gguf -p 512 -n 128 -t 4 -r 2 | tee bench-kleidiai.txt
           fi
 
       - name: Symbol audit — SVE kernels present but gated
         run: |
+          set +e
           cd llama.cpp
-          echo '=== kai_matmul symbols in kleidiai build (llama-cli) ==='
-          nm build-kleidiai/bin/llama-cli 2>/dev/null | grep -E 'kai_matmul' | sed 's/.* T //' | sort -u | head -40
+          echo '=== kai_matmul symbols in KleidiAI object files ==='
+          find build-kleidiai -name '*.o' | xargs nm 2>/dev/null | grep -E 'kai_matmul' | awk '{print $NF}' | sort -u | head -40
           echo ''
-          echo '=== SVE-named kernels present ==='
-          nm build-kleidiai/bin/llama-cli 2>/dev/null | grep -cE 'kai_.*sve' | xargs echo 'count:'
+          echo '=== SVE-named kernel objects present in build ==='
+          find build-kleidiai -name '*sve*' | wc -l | xargs echo 'sve-named objects:'
           echo ''
           echo '=== SVE vs NEON register usage in KleidiAI objects ==='
           total_sve=0; total_neon=0
