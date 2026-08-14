@@ -1,5 +1,12 @@
 # Neoverse SVE Dispatch Audit — "SVE2 advertised, never used"
 
+![CI](https://github.com/optimizedwf/arm-dispatch-audit/actions/workflows/audit.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![Platform](https://img.shields.io/badge/platform-arm64--Neoverse--N2-orange)
+![llama.cpp](https://img.shields.io/badge/llama.cpp-b10434-purple)
+![KleidiAI](https://img.shields.io/badge/KleidiAI-v1.24.0-teal)
+
+
 **Measured on GitHub-hosted `ubuntu-24.04-arm` (Neoverse-N2, 4 vCPU) with llama.cpp `b10434` + KleidiAI v1.24.0.**
 
 > **The finding:** On 128-bit-SVE Neoverse cores (N2, Graviton4, Azure Cobalt 100 — every free Arm CI runner),
@@ -10,6 +17,10 @@
 >
 > **Measured consequence:** building with `-DGGML_CPU_KLEIDIAI=ON` changes nothing on Neoverse-N2 —
 > 187.06 → 186.92 tok/s prefill (−0.07%, noise), 43.84 → 42.33 tok/s decode (−3.4%, noise).
+
+<p align="center">
+  <img src="assets/hero-dispatch-audit.png" alt="Dispatch audit flow" width="720">
+</p>
 
 ## Measured evidence (run 2026-08-14, fully reproducible)
 
