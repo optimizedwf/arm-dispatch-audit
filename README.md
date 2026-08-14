@@ -73,7 +73,8 @@ with measurable tok/s evidence, an honest negative result, and one-command repro
 .github/workflows/audit.yml   # full audit pipeline (build ×2 + bench + dispatch + disasm)
 .github/audit.sh              # standalone one-command audit
 evidence/EVIDENCE.md          # full evidence writeup
-evidence/bench-*.txt          # raw benchmark tables
+evidence/bench-*.txt          # raw benchmark tables (Q8_0 + Q4_K_M)
+evidence/results.json         # machine-readable results + verdict
 evidence/kai-symbols.txt      # kernel census
 README.md · LICENSE (MIT)
 ```
