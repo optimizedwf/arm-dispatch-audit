@@ -56,10 +56,10 @@ NEON register instructions (all objects): 33871
 
 | build | pp512 (tok/s) | tg128 (tok/s) |
 |---|---|---|
-| default (no KleidiAI) | **187.22 ± 0.06** | **45.16 ± 0.04** |
-| + KleidiAI (GGML_CPU_KLEIDIAI=ON) | 187.67 ± 0.14 | 44.94 ± 0.07 |
+| default (no KleidiAI) | **187.06 ± 0.03** | **43.84 ± 0.21** |
+| + KleidiAI (GGML_CPU_KLEIDIAI=ON) | 186.92 ± 0.06 | 42.33 ± 0.92 |
 
-Δ = **+0.24% prefill / −0.49% decode** — statistically identical (noise).
+Δ = **−0.07% prefill / −3.4% decode** — KleidiAI is a no-op (or slightly worse) on 128-bit Neoverse.
 Expected if the SVE path is dead: KleidiAI adds zero on 128-bit Neoverse (its NEON i8mm/dotprod kernels
 are the same ones ggml already uses).
 
