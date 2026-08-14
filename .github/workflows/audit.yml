@@ -1,0 +1,19 @@
+name: arm-audit-test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Identity
+        run: |
+          uname -m
+          lscpu | grep -E 'Model name|Architecture|Flags' | head -5
+          cat /proc/cpuinfo | grep -E 'model name|Features' | head -3
+          echo "---"
+          nproc
