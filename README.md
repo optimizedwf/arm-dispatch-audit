@@ -34,6 +34,10 @@
 | Bench default (pp512/tg128) | **187.06 / 43.84** tok/s |
 | Bench +KleidiAI (pp512/tg128) | 186.92 / 42.33 tok/s → **no change (noise)** |
 
+<p align="center">
+  <img src="assets/bench-chart.png" alt="Benchmark: default vs KleidiAI" width="680">
+</p>
+
 ## Why this matters
 
 - **Every free Arm CI runner** (GitHub Actions arm64, CodeQL) is Neoverse-N2-class, 128-bit SVE.
