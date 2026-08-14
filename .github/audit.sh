@@ -38,7 +38,8 @@ cd ..
 echo "== model =="
 python3 -c "
 from huggingface_hub import hf_hub_download
-print(hf_hub_download('${MODEL_REPO}', '${MODEL_FILE}', local_dir='models'))
+for f in ('${MODEL_FILE}', 'qwen2.5-1.5b-instruct-q4_k_m.gguf'):
+    print(hf_hub_download('${MODEL_REPO}', f, local_dir='models'))
 "
 
 echo "== bench: default =="
@@ -47,8 +48,18 @@ echo "== bench: default =="
 echo "== bench: kleidiai =="
 ./llama.cpp/build-kleidiai/bin/llama-bench -m models/${MODEL_FILE} -p 512 -n 128 -t ${NPROC} -r 2 | tee bench-kleidiai.txt
 
+echo "== bench: default (Q4_K_M) =="
+./llama.cpp/build-default/bin/llama-bench -m models/qwen2.5-1.5b-instruct-q4_k_m.gguf -p 512 -n 128 -t ${NPROC} -r 2 | tee bench-default-q4.txt
+
+echo "== bench: kleidiai (Q4_K_M) =="
+./llama.cpp/build-kleidiai/bin/llama-bench -m models/qwen2.5-1.5b-instruct-q4_k_m.gguf -p 512 -n 128 -t ${NPROC} -r 2 | tee bench-kleidiai-q4.txt
+
 echo "== dispatch table =="
 echo "SVE-named kernels in binary: $(nm ./llama.cpp/build-kleidiai/bin/llama-cli | grep -cE 'kai_.*sve')"
+svc_obj=$(find ./llama.cpp/build-kleidiai -name '*sve_i8mm_asm.S.o' | head -1)
+neon_obj=$(find ./llama.cpp/build-kleidiai -name '*16x4_neon_i8mm.c.o' | head -1)
+[ -n "$svc_obj" ] && echo "SVE objdump sample:" && objdump -d "$svc_obj" | grep -E '\bz[0-9]+\b' | head -6
+[ -n "$neon_obj" ] && echo "NEON objdump sample:" && objdump -d "$neon_obj" | grep -E '\bv[0-9]+\b' | head -6
 echo "KleidiAI matmul symbols:"
 nm ./llama.cpp/build-kleidiai/bin/llama-cli | grep kai_matmul | sed 's/.* T //' | sort -u | head -30
 echo ""
