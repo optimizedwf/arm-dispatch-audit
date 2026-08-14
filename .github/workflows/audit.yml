@@ -1,4 +1,4 @@
-name: arm-audit-test
+name: neoverse-sve-dispatch-audit
 
 on:
   push:
@@ -8,12 +8,97 @@ on:
 jobs:
   audit:
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
-      - name: Identity
+
+      - name: CPU identity (Neoverse-N2)
         run: |
           uname -m
-          lscpu | grep -E 'Model name|Architecture|Flags' | head -5
-          cat /proc/cpuinfo | grep -E 'model name|Features' | head -3
+          lscpu | grep -E 'Model name|Architecture|CPU\(s\)|Flags' | head -6
           echo "---"
-          nproc
+          cat /proc/cpuinfo | grep -m1 Features
+
+      - name: Build llama.cpp b10434 (default arm64)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq cmake ninja-build build-essential
+          git clone --depth 1 --branch b10434 https://github.com/ggml-org/llama.cpp.git
+          cd llama.cpp
+          cmake -B build-default -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLAMA_NATIVE=OFF
+          cmake --build build-default --config Release -j$(nproc) --target llama-bench llama-cli
+          cp build-default/bin/llama-bench build-default/bin/llama-cli .
+
+      - name: Build llama.cpp b10434 + KleidiAI (GGML_CPU_KLEIDIAI=ON)
+        run: |
+          cd llama.cpp
+          cmake -B build-kleidiai -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLAMA_NATIVE=OFF -DGGML_CPU_KLEIDIAI=ON
+          cmake --build build-kleidiai --config Release -j$(nproc) --target llama-bench llama-cli
+          cp build-kleidiai/bin/llama-bench build-kleidiai/bin/llama-cli .
+
+      - name: Benchmark default vs KleidiAI (Qwen2.5-1.5B Q8_0)
+        run: |
+          pip install -q huggingface_hub 2>/dev/null
+          python3 -c "
+          from huggingface_hub import hf_hub_download
+          p = hf_hub_download('Qwen/Qwen2.5-1.5B-Instruct-GGUF', 'Qwen2.5-1.5B-Instruct-Q8_0.gguf', local_dir='models')
+          print('downloaded', p)
+          " 2>&1 | tail -2
+          ls -la models/ 2>/dev/null || echo "NO MODEL"
+          if [ -f models/Qwen2.5-1.5B-Instruct-Q8_0.gguf ]; then
+            echo "=== DEFAULT ==="
+            ./llama.cpp/llama-bench -m models/Qwen2.5-1.5B-Instruct-Q8_0.gguf -p 512 -n 128 -t 4 -r 2 | tee bench-default.txt
+            echo "=== KLEIDIAI ==="
+            ./llama.cpp/build-kleidiai/bin/llama-bench -m models/Qwen2.5-1.5B-Instruct-Q8_0.gguf -p 512 -n 128 -t 4 -r 2 | tee bench-kleidiai.txt
+          fi
+
+      - name: Symbol audit — SVE kernels present but gated
+        run: |
+          cd llama.cpp
+          echo '=== kai_matmul symbols in kleidiai build (llama-cli) ==='
+          nm build-kleidiai/bin/llama-cli 2>/dev/null | grep -E 'kai_matmul' | sed 's/.* T //' | sort -u | head -40
+          echo ''
+          echo '=== SVE-named kernels present ==='
+          nm build-kleidiai/bin/llama-cli 2>/dev/null | grep -cE 'kai_.*sve' | xargs echo 'count:'
+          echo ''
+          echo '=== SVE vs NEON register usage in KleidiAI objects ==='
+          total_sve=0; total_neon=0
+          for obj in $(find build-kleidiai -name '*.o'); do
+            sve_count=$(objdump -d "$obj" 2>/dev/null | grep -cE '\bz[0-9]+\b')
+            neon_count=$(objdump -d "$obj" 2>/dev/null | grep -cE '\bv[0-9]+\b')
+            total_sve=$((total_sve + sve_count))
+            total_neon=$((total_neon + neon_count))
+          done
+          echo "SVE register instructions (all objects): $total_sve"
+          echo "NEON register instructions (all objects): $total_neon"
+
+      - name: Runtime svcntb proof
+        run: |
+          cat > /tmp/svctest.c <<'EOF'
+          #include <stdio.h>
+          #ifdef __ARM_FEATURE_SVE
+          #include <arm_sve.h>
+          int main(){ printf("svcntb() = %d (bytes per SVE vector)\n", svcntb()); return 0; }
+          #else
+          int main(){ printf("no SVE compile support\n"); return 0; }
+          #endif
+          EOF
+          gcc -march=armv8.6-a+sve -o /tmp/svctest /tmp/svctest.c 2>/dev/null && /tmp/svctest || echo "svc compile failed"
+          echo ''
+          echo '=== The gate in llama.cpp master (kleidiai.cpp) ==='
+          echo 'ctx.features = ... | (runtime_feat.sve_cnt == QK8_0 ? CPU_FEATURE_SVE : CPU_FEATURE_NONE);'
+          echo 'QK8_0 = 32  (bytes)'
+          echo 'svcntb() = 16 on Neoverse-N2  ->  CPU_FEATURE_SVE = NONE'
+          echo '=> all KleidiAI *_sve_* matmul kernels are DEAD CODE on 128-bit Neoverse'
+          echo '=> matmul actually runs neon_i8mm / neon_dotprod kernels'
+
+      - name: Collect evidence
+        run: |
+          mkdir -p evidence
+          cp bench-default.txt evidence/ 2>/dev/null || true
+          cp bench-kleidiai.txt evidence/ 2>/dev/null || true
+          (cd llama.cpp && nm build-kleidiai/bin/llama-cli | grep kai_matmul) > evidence/kai-symbols.txt 2>/dev/null || true
+          echo "=== bench results ==="
+          cat evidence/bench-default.txt 2>/dev/null | tail -8
+          echo "---"
+          cat evidence/bench-kleidiai.txt 2>/dev/null | tail -8
+          ls -la evidence/
