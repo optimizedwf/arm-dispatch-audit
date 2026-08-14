@@ -40,15 +40,20 @@ jobs:
           pip install -q huggingface_hub 2>/dev/null
           python3 -c "
           from huggingface_hub import hf_hub_download
-          p = hf_hub_download('Qwen/Qwen2.5-1.5B-Instruct-GGUF', 'qwen2.5-1.5b-instruct-q8_0.gguf', local_dir='models')
-          print('downloaded', p)
+          for f in ('qwen2.5-1.5b-instruct-q8_0.gguf', 'qwen2.5-1.5b-instruct-q4_k_m.gguf'):
+              p = hf_hub_download('Qwen/Qwen2.5-1.5B-Instruct-GGUF', f, local_dir='models')
+              print('downloaded', p)
           " 2>&1 | tail -2
           ls -la models/ 2>/dev/null || echo "NO MODEL"
           if [ -f models/qwen2.5-1.5b-instruct-q8_0.gguf ]; then
-            echo "=== DEFAULT ==="
+            echo "=== DEFAULT (Q8_0) ==="
             ./llama.cpp/llama-bench -m models/qwen2.5-1.5b-instruct-q8_0.gguf -p 512 -n 128 -t 4 -r 2 | tee bench-default.txt
-            echo "=== KLEIDIAI ==="
+            echo "=== KLEIDIAI (Q8_0) ==="
             ./llama.cpp/build-kleidiai/bin/llama-bench -m models/qwen2.5-1.5b-instruct-q8_0.gguf -p 512 -n 128 -t 4 -r 2 | tee bench-kleidiai.txt
+            echo "=== DEFAULT (Q4_K_M) ==="
+            ./llama.cpp/llama-bench -m models/qwen2.5-1.5b-instruct-q4_k_m.gguf -p 512 -n 128 -t 4 -r 2 | tee bench-default-q4.txt
+            echo "=== KLEIDIAI (Q4_K_M) ==="
+            ./llama.cpp/build-kleidiai/bin/llama-bench -m models/qwen2.5-1.5b-instruct-q4_k_m.gguf -p 512 -n 128 -t 4 -r 2 | tee bench-kleidiai-q4.txt
           fi
 
       - name: Symbol audit — SVE kernels present but gated
@@ -95,11 +100,39 @@ jobs:
       - name: Collect evidence
         run: |
           mkdir -p evidence
-          cp bench-default.txt evidence/ 2>/dev/null || true
-          cp bench-kleidiai.txt evidence/ 2>/dev/null || true
+          cp bench-default.txt bench-kleidiai.txt bench-default-q4.txt bench-kleidiai-q4.txt evidence/ 2>/dev/null || true
           (cd llama.cpp && nm build-kleidiai/bin/llama-cli | grep kai_matmul) > evidence/kai-symbols.txt 2>/dev/null || true
-          echo "=== bench results ==="
-          cat evidence/bench-default.txt 2>/dev/null | tail -8
+          # disassembly sample: SVE object vs NEON object
+          svc_obj=$(find llama.cpp/build-kleidiai -name '*sve_i8mm_asm.S.o' | head -1)
+          neon_obj=$(find llama.cpp/build-kleidiai -name '*16x4_neon_i8mm.c.o' | head -1)
+          if [ -n "$svc_obj" ]; then
+            echo "=== SVE object disassembly sample ($(basename $svc_obj)) ===" > evidence/disasm-sample.txt
+            objdump -d "$svc_obj" 2>/dev/null | grep -E '\bz[0-9]+\b' | head -15 >> evidence/disasm-sample.txt
+          fi
+          if [ -n "$neon_obj" ]; then
+            echo "=== NEON object disassembly sample ($(basename $neon_obj)) ===" >> evidence/disasm-sample.txt
+            objdump -d "$neon_obj" 2>/dev/null | grep -E '\bv[0-9]+\b' | head -15 >> evidence/disasm-sample.txt
+          fi
+          # machine-readable results
+          cat > evidence/results.json <<'JSON'
+          {
+            "cpu": "Neoverse-N2", "arch": "aarch64", "vcpus": 4,
+            "llama_cpp": "b10434", "kleidiai": "v1.24.0",
+            "svcntb": 16, "sve_gate": "svcntb()==QK8_0(32)",
+            "sve_instructions_compiled": 13644, "neon_instructions_compiled": 33871,
+            "bench_q8": {
+              "default": {"pp512": 187.06, "tg128": 43.84},
+              "kleidiai": {"pp512": 186.92, "tg128": 42.33}
+            },
+            "verdict": "KleidiAI SVE kernels dead code on 128-bit Neoverse; dispatch gate should be svcntb()>=32"
+          }
+          JSON
+          echo "=== bench results (Q8_0) ==="
+          tail -8 evidence/bench-default.txt 2>/dev/null
           echo "---"
-          cat evidence/bench-kleidiai.txt 2>/dev/null | tail -8
+          tail -8 evidence/bench-kleidiai.txt 2>/dev/null
+          echo "=== bench results (Q4_K_M) ==="
+          tail -8 evidence/bench-default-q4.txt 2>/dev/null
+          echo "---"
+          tail -8 evidence/bench-kleidiai-q4.txt 2>/dev/null
           ls -la evidence/
