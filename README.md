@@ -16,7 +16,7 @@
 > `neon_i8mm`/`neon_dotprod` kernels.
 >
 > **Measured consequence:** building with `-DGGML_CPU_KLEIDIAI=ON` changes nothing on Neoverse-N2 —
-> 187.06 → 186.92 tok/s prefill (−0.07%, noise), 43.84 → 42.33 tok/s decode (−3.4%, noise).
+> 187.36 → 185.47 tok/s prefill (−1.0%, noise), 43.44 → 43.59 tok/s decode (+0.3%, noise).
 
 <p align="center">
   <img src="assets/hero-dispatch-audit.png" alt="Dispatch audit flow" width="720">
@@ -31,8 +31,9 @@
 | KleidiAI dispatch gate (`kleidiai.cpp`) | `sve_cnt == QK8_0 (32) ? CPU_FEATURE_SVE : NONE` → **SVE disabled** |
 | SVE instructions compiled into binary | **13,644** (present, never dispatched) |
 | NEON instructions (what actually runs) | **33,871** |
-| Bench default (pp512/tg128) | **187.06 / 43.84** tok/s |
-| Bench +KleidiAI (pp512/tg128) | 186.92 / 42.33 tok/s → **no change (noise)** |
+| Bench default (pp512/tg128) | **187.36 / 43.44** tok/s |
+| Bench +KleidiAI (pp512/tg128) | 185.47 / 43.59 tok/s → **no change (noise)** |
+| Bench Q4_K_M default / +KleidiAI (pp512/tg128) | 89.71/31.67 → 89.65/31.91 → **no change (noise)** |
 
 <p align="center">
   <img src="assets/bench-chart.png" alt="Benchmark: default vs KleidiAI" width="680">
