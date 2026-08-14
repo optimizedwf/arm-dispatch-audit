@@ -9,7 +9,7 @@
 > `neon_i8mm`/`neon_dotprod` kernels.
 >
 > **Measured consequence:** building with `-DGGML_CPU_KLEIDIAI=ON` changes nothing on Neoverse-N2 —
-> 187.22 → 187.67 tok/s prefill (+0.24%, noise), 45.16 → 44.94 tok/s decode (−0.49%, noise).
+> 187.06 → 186.92 tok/s prefill (−0.07%, noise), 43.84 → 42.33 tok/s decode (−3.4%, noise).
 
 ## Measured evidence (run 2026-08-14, fully reproducible)
 
@@ -20,8 +20,8 @@
 | KleidiAI dispatch gate (`kleidiai.cpp`) | `sve_cnt == QK8_0 (32) ? CPU_FEATURE_SVE : NONE` → **SVE disabled** |
 | SVE instructions compiled into binary | **13,644** (present, never dispatched) |
 | NEON instructions (what actually runs) | **33,871** |
-| Bench default (pp512/tg128) | **187.22 / 45.16** tok/s |
-| Bench +KleidiAI (pp512/tg128) | 187.67 / 44.94 tok/s → **no change (noise)** |
+| Bench default (pp512/tg128) | **187.06 / 43.84** tok/s |
+| Bench +KleidiAI (pp512/tg128) | 186.92 / 42.33 tok/s → **no change (noise)** |
 
 ## Why this matters
 
