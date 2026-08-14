@@ -33,8 +33,8 @@ minority of cloud fleets.
 - Full CI pipeline (`audit.yml`) that builds llama.cpp `b10434` twice (default / +KleidiAI v1.24.0),
   benchmarks Qwen2.5-1.5B Q8_0 (512-tok prompt, 128-tok decode, 4 threads, 2 reps), probes
   `svcntb()` live, and counts SVE vs NEON instructions across all KleidiAI objects.
-- Evidence artifacts committed: `evidence/EVIDENCE.md`, `evidence/bench-*.txt`,
-  `evidence/kai-symbols.txt`.
+- Evidence artifacts committed: `evidence/EVIDENCE.md`, `evidence/bench-*.txt` (Q8_0 + Q4_K_M),
+  `evidence/kai-symbols.txt`, `evidence/results.json` (machine-readable verdict).
 - Standalone reproduce: `bash .github/audit.sh`.
 
 ### Setup Instructions
